@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
@@ -20,74 +20,70 @@ import { isTokenHasValidSignature } from "../helpers/isTokenHasValidSignature";
 
 const saltRounds = 10;
 
-export const login = withErrorHandling(
-  async (req: Request<{}, {}, LoginRequest>, res: Response) => {
-    const { error } = AuthValidations.loginSchema.validate(req.body);
+export const login = withErrorHandling(async (req: Request<{}, {}, LoginRequest>, res) => {
+  const { error } = AuthValidations.loginSchema.validate(req.body);
 
-    if (error) {
-      throw new ApiError(error?.message, 400);
-    }
-
-    const user = await UserService.getUserByEmail(req.body.email);
-
-    if (!user) {
-      throw new ApiError("Invalid credentials", 401);
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(req.body.password, user.password);
-
-    if (!isPasswordCorrect) {
-      throw new ApiError("Invalid credentials", 401);
-    }
-
-    const accessToken = generateAccessToken(user.id);
-    const refreshToken = generateRefreshToken(user.id);
-
-    const redisKey = `user:${user.id}`;
-
-    RedisService.hset(redisKey, "refreshToken", refreshToken);
-
-    res.send({ accessToken, refreshToken });
+  if (error) {
+    throw new ApiError(error?.message, 400);
   }
-);
 
-export const signup = withErrorHandling(
-  async (req: Request<{}, {}, SignupRequest>, res: Response) => {
-    const { error } = AuthValidations.signupSchema.validate(req.body);
+  const user = await UserService.getUserByEmail(req.body.email);
 
-    if (error) {
-      throw new ApiError(error?.message, 400);
-    }
-
-    const user = await UserService.getUserByEmail(req.body.email);
-
-    if (user) {
-      throw new ApiError("This email is already in use", 400);
-    }
-
-    const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
-
-    const createdUserID = await UserService.createUser({
-      ...req.body,
-      password: hashedPassword,
-    });
-
-    if (typeof createdUserID !== "number") {
-      throw new ApiError("An error occurred while creating a user", 500);
-    }
-
-    const accessToken = await generateAccessToken(createdUserID);
-    const refreshToken = await generateRefreshToken(createdUserID);
-
-    const redisKey = `user:${createdUserID}`;
-
-    RedisService.hset(redisKey, "refreshToken", refreshToken);
-
-    res.send({ accessToken, refreshToken });
+  if (!user) {
+    throw new ApiError("Invalid credentials", 401);
   }
-);
 
-export const logout = (req: Request, res: Response) => {
+  const isPasswordCorrect = await bcrypt.compare(req.body.password, user.password);
+
+  if (!isPasswordCorrect) {
+    throw new ApiError("Invalid credentials", 401);
+  }
+
+  const accessToken = generateAccessToken(user.id);
+  const refreshToken = generateRefreshToken(user.id);
+
+  const redisKey = `user:${user.id}`;
+
+  RedisService.hset(redisKey, "refreshToken", refreshToken);
+
+  res.send({ accessToken, refreshToken });
+});
+
+export const signup = withErrorHandling(async (req: Request<{}, {}, SignupRequest>, res) => {
+  const { error } = AuthValidations.signupSchema.validate(req.body);
+
+  if (error) {
+    throw new ApiError(error?.message, 400);
+  }
+
+  const user = await UserService.getUserByEmail(req.body.email);
+
+  if (user) {
+    throw new ApiError("This email is already in use", 400);
+  }
+
+  const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
+
+  const createdUserID = await UserService.createUser({
+    ...req.body,
+    password: hashedPassword,
+  });
+
+  if (typeof createdUserID !== "number") {
+    throw new ApiError("An error occurred while creating a user", 500);
+  }
+
+  const accessToken = await generateAccessToken(createdUserID);
+  const refreshToken = await generateRefreshToken(createdUserID);
+
+  const redisKey = `user:${createdUserID}`;
+
+  RedisService.hset(redisKey, "refreshToken", refreshToken);
+
+  res.send({ accessToken, refreshToken });
+});
+
+export const logout = withErrorHandling(async (req, res) => {
   const authHeader = req.headers["authorization"];
 
   if (!authHeader) {
@@ -100,10 +96,10 @@ export const logout = (req: Request, res: Response) => {
   deleteRefreshToken(token);
 
   res.status(200).send({ message: "Success" });
-};
+});
 
 export const refreshToken = withErrorHandling(
-  async (req: Request<{}, {}, RefreshTokenRequest>, res: Response) => {
+  async (req: Request<{}, {}, RefreshTokenRequest>, res) => {
     const { refreshToken } = req.body;
     const decoded = jwt.decode(refreshToken);
 

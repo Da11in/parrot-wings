@@ -6,3 +6,14 @@ export type User = {
   last_name: string;
   balance: number;
 };
+
+export type UserDTO = {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+};
+
+export type MeDTO = UserDTO & {
+  balance: number;
+};

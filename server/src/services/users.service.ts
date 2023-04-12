@@ -1,14 +1,26 @@
-import { SignupRequest } from "../types/auth.types";
+import QueryString from "qs";
+import type { SignupRequest } from "../types/auth.types";
 import type { User } from "../types/users.types";
 import db from "./db.service";
 
 const INITIAL_BALANCE = 500;
 
-export const getUserById = async (id: number) =>
+export const getAll = async (
+  search: string | QueryString.ParsedQs | string[] | QueryString.ParsedQs[] | undefined
+): Promise<User[]> =>
+  new Promise((resolve, reject) => {
+    const query = `
+    SELECT * FROM users 
+    WHERE first_name LIKE '%${search || ""}%' 
+    OR last_name LIKE '%${search || ""}%'`;
+    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res)));
+  });
+
+export const getUserById = async (id: number): Promise<User> =>
   new Promise((resolve, reject) => {
     db.query(`SELECT * from users WHERE id=${id}`, (err, res) => {
       if (err) {
-        reject(err);
+        reject(err.message);
       }
       resolve(res[0]);
     });
@@ -17,10 +29,10 @@ export const getUserById = async (id: number) =>
 export const getUserByEmail = (email: string): Promise<User> =>
   new Promise((resolve, reject) => {
     const query = `
-  SELECT * FROM users WHERE email = '${email}'
+    SELECT * FROM users WHERE email = '${email}'
   `;
 
-    db.query(query, (err, res) => (err ? reject(err) : resolve(res[0])));
+    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res[0])));
   });
 
 export const createUser = async (data: SignupRequest) =>
@@ -32,5 +44,5 @@ export const createUser = async (data: SignupRequest) =>
     INSERT INTO users (email, password, first_name, last_name, balance) 
     VALUES ('${email}', '${password}', '${firstName}', '${lastName}', ${balance});`;
 
-    db.query(query, (err, res) => (err ? reject(err) : resolve(res.insertId)));
+    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res.insertId)));
   });
