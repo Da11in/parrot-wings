@@ -30,6 +30,10 @@ export const createTransaction = withErrorHandling(
     const token = getTokenFromRequest(req);
     const id = getUserIdFromToken(token);
 
+    if (id === recipientId) {
+      throw new ApiError("You cannot transfer funds to yourself", 400);
+    }
+
     await TransactionsService.createTransaction({
       senderId: id,
       amount,

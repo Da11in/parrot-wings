@@ -7,7 +7,10 @@ import { getTokenFromRequest } from "../helpers/getTokenFromRequest";
 export const getAllUsers = withErrorHandling(async (req, res) => {
   const { q } = req.query;
 
-  const data = await UsersService.getAll(q);
+  const token = getTokenFromRequest(req);
+  const id = getUserIdFromToken(token);
+
+  const data = await UsersService.getAll(id, q);
   res.status(200).send(mapUsersToUserDTO(data));
 });
 

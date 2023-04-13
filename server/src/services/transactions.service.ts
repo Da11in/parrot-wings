@@ -8,6 +8,8 @@ import type {
   CreateTransactionParams,
   Transaction,
 } from "../types/transactions.types";
+import * as TransactionsRepository from "../repository/transactions.repository";
+import * as UsersRepository from "../repository/users.repository";
 
 const getBalancesForTransaction = async (
   params: GetBalancesParams
@@ -15,11 +17,11 @@ const getBalancesForTransaction = async (
   new Promise((resolve, reject) => {
     const { senderId, recipientId } = params;
 
-    const query = `SELECT id, balance FROM users WHERE id IN (${senderId}, ${recipientId})`;
+    const query = TransactionsRepository.balancesQuery(params);
 
     db.query(query, (err, res) => {
       if (err) {
-        reject(err.message);
+        reject(new ApiError(err.message, 500));
       }
 
       const senderBalance = res.find((row: BalancesQueryType) => row.id === senderId)?.balance;
@@ -41,32 +43,70 @@ const getBalancesForTransaction = async (
 
 const makeTransaction = async (params: InsertTransactionParams) =>
   new Promise((resolve, reject) => {
-    const { senderId, recipientId, amount, newSenderBalance, newRecipientBalance } = params;
-    const query = `
-  INSERT INTO transactions
-  (user_id, amount, incoming, balance_after_transaction, recipient_id, sender_id)
-  VALUES
-  (${senderId}, ${amount}, 0, ${newSenderBalance}, ${recipientId}, NULL),
-  (${recipientId}, ${amount}, 1, ${newRecipientBalance}, NULL, ${senderId});
-  `;
+    const { senderId, recipientId, newSenderBalance, newRecipientBalance, amount } = params;
 
-    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res)));
-  });
+    db.beginTransaction((err) => {
+      if (err) reject(new ApiError(err.message, 500));
 
-const updateUserBalance = async (id: number, balance: number) =>
-  new Promise((resolve, reject) => {
-    const query = `
-  UPDATE users
-  SET balance = ${balance}
-  WHERE id = ${id};`;
+      db.query(UsersRepository.selectUserBalanceForUpdateQuery(senderId), (err) => {
+        if (err) {
+          return db.rollback((err) => {
+            reject(new ApiError(err.message, 500));
+          });
+        }
 
-    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res)));
+        db.query(UsersRepository.selectUserBalanceForUpdateQuery(recipientId), (err) => {
+          if (err) {
+            return db.rollback((err) => {
+              reject(new ApiError(err.message, 500));
+            });
+          }
+
+          db.query(UsersRepository.updateUserBalanceQuery(senderId, newSenderBalance), (err) => {
+            if (err) {
+              return db.rollback((err) => {
+                reject(new ApiError(err.message, 500));
+              });
+            }
+
+            db.query(
+              UsersRepository.updateUserBalanceQuery(recipientId, newRecipientBalance),
+              (err) => {
+                if (err) {
+                  return db.rollback((err) => {
+                    reject(new ApiError(err.message, 500));
+                  });
+                }
+
+                db.query(TransactionsRepository.insertIntoTransactionsQuery(params), (err) => {
+                  if (err) {
+                    return db.rollback((err) => {
+                      reject(new ApiError(err.message, 500));
+                    });
+                  }
+
+                  db.commit((err) => {
+                    if (err) {
+                      return db.rollback((err) => {
+                        reject(new ApiError(err.message, 500));
+                      });
+                    }
+                  });
+
+                  resolve(true);
+                });
+              }
+            );
+          });
+        });
+      });
+    });
   });
 
 export const getAllTransactionsByUserId = async (id: number): Promise<Transaction[]> =>
   new Promise((resolve, reject) => {
-    const query = `SELECT * FROM transactions WHERE user_id=${id} ORDER BY transaction_date DESC;`;
-    db.query(query, (err, res) => (err ? reject(err.message) : resolve(res)));
+    const query = TransactionsRepository.getAllTransactionsByUserIdQuery(id);
+    db.query(query, (err, res) => (err ? reject(new ApiError(err.message, 500)) : resolve(res)));
   });
 
 export const createTransaction = async (params: CreateTransactionParams) => {
@@ -81,10 +121,6 @@ export const createTransaction = async (params: CreateTransactionParams) => {
     throw new ApiError("Insufficient funds to complete the transfer", 400);
   }
 
-  if (senderId === recipientId) {
-    throw new ApiError("You cannot transfer funds to yourself", 400);
-  }
-
   const newSenderBalance = senderBalance - amount;
   const newRecipientBalance = recipientBalance + amount;
 
@@ -95,7 +131,4 @@ export const createTransaction = async (params: CreateTransactionParams) => {
     newSenderBalance,
     newRecipientBalance,
   });
-
-  await updateUserBalance(senderId, newSenderBalance);
-  await updateUserBalance(recipientId, newRecipientBalance);
 };
